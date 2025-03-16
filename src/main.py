@@ -22,13 +22,22 @@ When processing a document:
 3. Return the formatted markdown string
 """
 
+EXTRACT_STRUCTURED_DATA_AGENT_DESCRIPTION = """
+You are a structured data extraction agent. Your task is to:
+1. Take a markdown string as input
+2. Extract all relevant invoice details as structured json from the markdown
+3. Return the json
+"""
+
 MANAGER_AGENT_DESCRIPTION = """
 You are a document processing manager. Your task is to:
 1. Take a document file path as input
 2. Use the markdown_agent to extract and format the text
-3. Return the results as a clean, well-structured markdown string
-4. Ensure all important information from the document is preserved
+3. Use the structured_data_agent to extract invoice details as structured json from the markdown
+4. Return the json
 """
+
+
 
 def setup_agents():
     """Set up the agents for document processing."""
@@ -54,11 +63,19 @@ def setup_agents():
         description=MARKDOWN_AGENT_DESCRIPTION
     )
 
+    # Create structured data extraction agent
+    structured_data_agent = ToolCallingAgent(
+        tools=[],
+        model=model,
+        name="structured_data_agent",
+        description=EXTRACT_STRUCTURED_DATA_AGENT_DESCRIPTION
+    )
+
     # Create manager agent
     manager_agent = CodeAgent(
         tools=[],
         model=model,
-        managed_agents=[markdown_agent],
+        managed_agents=[markdown_agent, structured_data_agent],
         description=MANAGER_AGENT_DESCRIPTION
     )
 
@@ -77,7 +94,9 @@ def main():
 
         # Process document
         task = f"""Process the document at {args.file_path} and return the results as a well-formatted markdown string.
-        Use the markdown_agent to extract and format the text."""
+        Use the markdown_agent to extract and format the text.
+        Use the structured_data_agent to extract invoice details as structured json from the markdown.
+        Return the json."""
 
         # Run the task
         result = manager_agent.run(task)
