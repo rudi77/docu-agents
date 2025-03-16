@@ -1,0 +1,11 @@
+Rechnung Nr. 12345
+Datum: 15. März 2025
+Gesamtbetrag: 1.250,00 EUR
+
+Positionen:
+1. Produkt A    2x    500,00 EUR    1.000,00 EUR
+2. Service B    1x    250,00 EUR      250,00 EUR
+
+Nettobetrag: 1.050,42 EUR
+MwSt (19%): 199,58 EUR
+Gesamtbetrag: 1.250,00 EUR 
