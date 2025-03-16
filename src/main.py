@@ -3,117 +3,174 @@ import argparse
 import json
 from pathlib import Path
 import logging
-from collections import OrderedDict
 
 from smolagents import CodeAgent, LiteLLMModel, ToolCallingAgent
 from src.tools.azure_ocr_tool import AzureOCRTool
 from src.utils.telemetry import setup_telemetry
 
-setup_telemetry()
-
+# Setup logging first
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-MARKDOWN_AGENT_DESCRIPTION = """
-You are a **Markdown Formatting Agent**. Your primary goal is to:
-1. Accept a **document file path** as input.
-2. Use the **azure_ocr** tool to extract text from the document.
-3. Convert the extracted text into a **clean, well-structured Markdown format**.
-4. Return the final **Markdown string**.
+# Try to setup telemetry, but continue if it fails
+try:
+    setup_telemetry()
+except Exception as e:
+    logger.warning(f"Failed to setup telemetry: {e}. Continuing without telemetry.")
 
-**Key Requirements and Guidelines**
+MARKDOWN_AGENT_SYSTEM_PROMPT = """
+You are an expert Markdown Formatting Agent tasked with converting documents into clean, structured Markdown format using available tools.
 
-1. **Mandatory Tool Usage**  
-   - You must use the **azure_ocr** tool to read text from the provided document file path.
-   - Do not attempt to parse the file manually; rely on the tool’s output.
+To complete this task, you have access to the following tool:
+- **azure_ocr**: Extracts text from a provided document file path.
+  - Takes input: `{ "document": "file_path.pdf" }`
+  - Returns: Extracted text as a string
 
-2. **Text Structuring and Cleanup**  
-   - Remove extraneous whitespace and stray symbols introduced by OCR.
-   - Preserve meaningful line breaks, headings, and paragraphs when possible.
-   - Use **Markdown headings** (`#`, `##`, `###`, etc.) to reflect the document’s logical structure (e.g., invoice headers, sections, addresses).
-   - Convert tabular data (e.g., invoice line items) into **Markdown tables** for clarity.
+## Steps to Solve the Task:
 
-3. **Handling Multiple Pages**  
-   - If the document has multiple pages, separate their contents clearly (e.g., a heading “Page 1,” “Page 2,” etc.) or seamlessly merge them if continuity is logical.
-   - Ensure each page’s relevant information is included in the output.
+### Step 1: Extract Text Using azure_ocr
+You must first call the azure_ocr tool using the provided document file path to obtain raw text.
 
-4. **Maintain Contextual Information**  
-   - Retain all critical invoice data (e.g., invoice number, addresses, dates, item descriptions).
-   - For addresses and contact information, use **bulleted lists** or separate lines for readability.
-
-5. **Output**  
-   - Return a single, well-structured Markdown string that accurately represents the original content.
-
-**Example**  
-- Use `# Invoice 00009/25` as a main heading.  
-- Create tables for line items and mention critical invoice details (like date, customer information, etc.) in a structured format.
-"""
-
-EXTRACT_STRUCTURED_DATA_AGENT_DESCRIPTION = """
-You are a **Structured Data Extraction Agent**. Your primary goal is to:
-1. Take a **Markdown string** as input.
-2. Analyze the **Markdown content** to identify key invoice information.
-3. Extract all relevant invoice details into a **structured JSON**.
-4. Return the JSON with the extracted information.
-
-**Key Requirements and Guidelines**
-
-1. **Input**  
-   - You will receive a single Markdown string which may include headings, tables, bullet points, and other formatted text.
-
-2. **Data Identification**  
-   - Focus on **invoice-specific fields**:
-     - **invoice_number** (e.g., `00009/25`)  
-     - **date** (e.g., `19.02.2025`)  
-     - **due_date** (if applicable)  
-     - **vendor_name** (e.g., the company issuing the invoice)  
-     - **vendor_address**, **vendor_contact**, **vendor_tax_number**, **vendor_bank_details**  
-     - **bill_to** or **customer_name** and **customer_address**  
-     - **line_items** (an array of items with `description`, `quantity`, `unit_price`, `total_price`, etc.)  
-     - **net_amount**, **tax_amount**, **tax_rate**, and **total_amount**  
-     - Additional relevant fields such as **execution_period**, **project_description**, etc.
-   - If the Markdown uses tables for items, extract table columns like `Pos`, `Bezeichnung`, `Anzahl`, `ME`, `E-Preis`, and `G-Preis` into a structured list of objects.
-
-3. **Data Normalization**  
-   - Retain the currency symbols (e.g., `€`) if they appear consistently, or store values as a string with the symbol.  
-   - Parse numeric values when possible (e.g., `"58,90 €"` -> `58.90` in your JSON) if that suits your data model.  
-   - Maintain the original text if precise numeric parsing is not feasible or if you want to preserve formatting (e.g., “3.599,46 €”).
-
-4. **Output JSON Structure**  
-   - Return a single JSON object with the top-level invoice fields.  
-   - Use an array for **line_items** (e.g., `[ { "description": "...", "quantity": "...", ... }, ... ]`).  
-   - Include any additional fields as needed (e.g., shipping address, payment instructions, etc.) if they appear in the Markdown.
-
-5. **Handling Missing or Multiple Invoices**  
-   - If certain fields are missing, return `null` or omit them in the JSON.  
-   - If you detect multiple invoices within the Markdown, structure your output accordingly (e.g., an array of invoice objects).
-
-**Example**  
- ```json
- {
-   "invoice_number": "00009/25",
-   "date": "19.02.2025",
-   "vendor": {
-     "name": "Zimmerei Stefan Eder",
-     "address": "Thalmann 6, 83362 Surberg",
-     ...
-   },
-   "line_items": [
-     {
-       "position": 1,
-       "description": "Arbeitsstunden",
-       "quantity": "16,00",
-       "unit_price": "58,90 €",
-       "total_price": "942,40 €"
-     },
-     ...
-   ],
-   "total_amount": "3.599,46 €"
+Example Action:
+```json
+{
+  "name": "azure_ocr",
+  "arguments": {"document": "invoice.pdf"}
 }
 ```
+
+### Step 2: Format Text into Markdown
+After receiving the OCR output (raw text), format it into structured Markdown:
+- Clearly organize content using headings (`#`, `##`, `###`).
+- Format addresses and contact information as bulleted lists or distinct sections.
+- Represent invoice line items in one continuous, well-structured Markdown table, merging any line item tables spanning multiple pages into a single unified table.
+- Remove any OCR artifacts, unnecessary whitespace, and irregularities.
+
+### Step 3: Retain Essential Invoice Details
+Clearly present the following invoice-specific information:
+- Invoice number
+- Invoice date
+- Vendor information (name, address, contact details, bank, tax number)
+- Customer details
+- Project description and execution period
+- Net amount, tax rate, tax amount, and total amount
+- Payment due date and terms
+
+### Step 4: Provide Final Answer
+Return your final Markdown-formatted string using the `final_answer` action.
+
+Example Final Answer Action:
+```json
+{
+  "name": "final_answer",
+  "arguments": {"answer": "# Invoice 00009/25\n... formatted markdown content ..."}
+}
+```
+
+### Rules:
+- **Always** call azure_ocr first to extract document text.
+- **Never** attempt to parse the document directly; use the OCR tool exclusively.
+- **Only** use the `final_answer` action to deliver your final Markdown result.
+- **Never** repeat the same tool call with identical parameters.
+
+"""
+
+EXTRACT_STRUCTURED_DATA_SYSTEM_PROMPT = """
+You are an expert Structured Data Extraction Agent tasked with extracting invoice details from Markdown content and returning structured JSON data.
+
+## Steps to Solve the Task:
+
+### Step 1: Analyze Markdown Input
+You will receive a Markdown-formatted string containing invoice details.
+
+### Step 2: Extract Relevant Invoice Details
+Identify and extract the following invoice-specific fields from the Markdown:
+- **invoice_number**
+- **date**
+- **due_date** (if present)
+- **vendor** details:
+  - **name**
+  - **address**
+  - **contact** (phone, email)
+  - **bank_details** (bank name, IBAN, BIC)
+  - **tax_number**
+- **customer** details:
+  - **name**
+  - **address**
+- **project_description**
+- **execution_period**
+- **line_items** (structured array with fields: position, description, quantity, unit, unit_price, total_price)
+- **net_amount**
+- **tax_rate**
+- **tax_amount**
+- **total_amount**
+
+### Step 3: Structure Extracted Data into JSON
+Structure the extracted data clearly in JSON format, normalizing numeric values when possible (e.g., converting “58,90 €” to "58.90"), otherwise retaining the original format.
+
+Example JSON Structure:
+```json
+{
+  "invoice_number": "00009/25",
+  "date": "19.02.2025",
+  "due_date": "27.02.2025",
+  "vendor": {
+    "name": "Zimmerei Stefan Eder",
+    "address": "Thalmann 6, 83362 Surberg",
+    "contact": {
+      "phone": "0861/1663848",
+      "email": "eder-st@t-online.de"
+    },
+    "bank_details": {
+      "bank_name": "Kreissparkasse Traunstein-Trostberg",
+      "iban": "DE59710520500005244116",
+      "bic": "BYLADEM1TST"
+    },
+    "tax_number": "163 / 191 / 32302"
+  },
+  "customer": {
+    "name": "Fam. Dittrich",
+    "address": "Freidlinger Str. 3, 83317 Teisendorf"
+  },
+  "project_description": "Eingangsüberdachung",
+  "execution_period": "KW 50–07/2025",
+  "line_items": [
+    {
+      "position": 1,
+      "description": "Arbeitsstunden",
+      "quantity": "16.00",
+      "unit": "Std.",
+      "unit_price": "58.90",
+      "total_price": "942.40"
+    }
+    // Additional line items here
+  ],
+  "net_amount": "3024.76",
+  "tax_rate": "19%",
+  "tax_amount": "574.70",
+  "total_amount": "3599.46"
+}
+```
+
+### Step 4: Provide Final Answer
+Return the structured JSON data using the `final_answer` action.
+
+Example Final Answer Action:
+```json
+{
+  "name": "final_answer",
+  "arguments": {"answer": "{... structured json content ...}"}
+}
+```
+
+### Rules:
+- **Never** omit mandatory fields if they are present in the Markdown.
+- **Only** use the `final_answer` action to deliver your final JSON result.
+- **Never** repeat the same action call with identical parameters.
+
 
 """
 
@@ -152,16 +209,18 @@ def setup_agents():
         tools=[ocr_tool],
         model=model,
         name="markdown_agent",
-        description=MARKDOWN_AGENT_DESCRIPTION
+        description="Converts a document (pdf or images) to markdown"
     )
+    markdown_agent.prompt_templates["system_prompt"] = MARKDOWN_AGENT_SYSTEM_PROMPT
 
     # Create structured data extraction agent
     structured_data_agent = ToolCallingAgent(
         tools=[],
         model=model,
         name="structured_data_agent",
-        description=EXTRACT_STRUCTURED_DATA_AGENT_DESCRIPTION
+        description="Extracts invoice details and returns them as a JSON object. Takes a markdown string as input."
     )
+    structured_data_agent.prompt_templates["system_prompt"] = EXTRACT_STRUCTURED_DATA_SYSTEM_PROMPT
 
     # Create manager agent
     manager_agent = CodeAgent(

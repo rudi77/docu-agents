@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import logging
+import base64
 
 from pydantic import HttpUrl, field_validator
 from pydantic_settings import BaseSettings
@@ -16,20 +17,54 @@ from pydantic_settings import BaseSettings
 env_path = Path(__file__).parent.parent.parent / '.env'
 load_dotenv(env_path)
 
-class Settings:
-    """Application settings loaded from environment variables."""
+class Settings(BaseSettings):
+    """Application settings."""
+    # Logging
+    LOG_LEVEL: str = "INFO"
     
-    def __init__(self):
-        # Logging
-        self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-        
-        # Azure OCR
-        self.AZURE_OCR_ENDPOINT = os.getenv("AZURE_OCR_ENDPOINT")
-        self.AZURE_OCR_KEY = os.getenv("AZURE_OCR_KEY")
-        
-        # OpenAI
-        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-        self.OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME")
+    # Azure OCR
+    AZURE_OCR_ENDPOINT: Optional[str] = None
+    AZURE_OCR_KEY: Optional[str] = None
+    AZURE_OCR_REGION: str = "westeurope"
+    
+    # OpenAI
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_API_BASE: str = "https://api.openai.com/v1"
+    
+    # Retry and timeout settings
+    MAX_RETRIES: int = 3
+    TIMEOUT_SECONDS: int = 30
+    
+    # OpenTelemetry settings
+    OTEL_SERVICE_NAME: str = "docu-agents"
+    OTEL_ENABLED: bool = True
+    OTEL_EXPORTER_OTLP_ENDPOINT: Optional[str] = None
+    OTEL_EXPORTER_OTLP_HEADERS: Optional[str] = None
+    
+    # Langfuse settings
+    LANGFUSE_PUBLIC_KEY: Optional[str] = None
+    LANGFUSE_SECRET_KEY: Optional[str] = None
+    
+    @field_validator("AZURE_OCR_ENDPOINT", "AZURE_OCR_KEY", "OPENAI_API_KEY")
+    @classmethod
+    def validate_required_settings(cls, v: Optional[str], info) -> Optional[str]:
+        """Validate that required settings are set."""
+        if info.field_name in ["AZURE_OCR_ENDPOINT", "AZURE_OCR_KEY"] and not v:
+            raise ValueError(f"{info.field_name} is required")
+        return v
+    
+    @field_validator("LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY")
+    @classmethod
+    def setup_langfuse_auth(cls, v: Optional[str], info) -> Optional[str]:
+        """Set up Langfuse authentication headers if keys are provided."""
+        if info.field_name == "LANGFUSE_PUBLIC_KEY" and v and cls.LANGFUSE_SECRET_KEY:
+            auth = base64.b64encode(f"{v}:{cls.LANGFUSE_SECRET_KEY}".encode()).decode()
+            cls.OTEL_EXPORTER_OTLP_HEADERS = f"Authorization=Basic {auth}"
+        return v
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
 
 @lru_cache()
 def get_settings() -> Settings:

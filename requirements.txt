@@ -1,9 +1,23 @@
+# Core dependencies
 smolagents>=0.1.0
-azure-cognitiveservices-vision-computervision>=0.9.0
-opentelemetry-api>=1.21.0
-opentelemetry-sdk>=1.21.0
-opentelemetry-instrumentation>=0.42b0
 python-dotenv>=1.0.0
-pytest>=7.4.0
-rich>=13.7.0
-pydantic>=2.5.0 
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# Azure OCR
+azure-ai-formrecognizer>=3.3.0
+azure-core>=1.29.0
+
+# OpenAI
+openai>=1.0.0
+litellm>=1.0.0
+
+# Telemetry and monitoring
+opentelemetry-sdk>=1.20.0
+opentelemetry-exporter-otlp>=1.20.0
+openinference-instrumentation-smolagents>=0.1.0
+opentelemetry-semantic-conventions>=0.40b0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0 
