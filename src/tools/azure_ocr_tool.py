@@ -96,6 +96,8 @@ class AzureOCRTool(Tool):
 
         text = "\n".join(text_lines)
 
+        print(text)
+
         return text
 
     def forward(self, file_path: str) -> str:
