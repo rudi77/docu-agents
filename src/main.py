@@ -1,11 +1,15 @@
 import os
 import argparse
+import json
 from pathlib import Path
 import logging
 from collections import OrderedDict
 
 from smolagents import CodeAgent, LiteLLMModel, ToolCallingAgent
 from src.tools.azure_ocr_tool import AzureOCRTool
+from src.utils.telemetry import setup_telemetry
+
+setup_telemetry()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -14,27 +18,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MARKDOWN_AGENT_DESCRIPTION = """
-This agent can extract text from pdf or image documents using OCR and convert it into a markdown format.
-You have access to the azure_ocr tool which can extract text from documents.
-When processing a document:
-1. Use the azure_ocr tool to extract text from the document
-2. Format the extracted text into a clean markdown structure
-3. Return the formatted markdown string
+You are a markdown formatting agent. Your task is to:
+1. Take a document file path as input
+2. Use the azure_ocr tool to extract text from the document
+3. Format the extracted text into a clean, well-structured markdown format
+4. Return the formatted markdown string
+
+Important: You must use the azure_ocr tool to extract text from the document.
 """
 
 EXTRACT_STRUCTURED_DATA_AGENT_DESCRIPTION = """
 You are a structured data extraction agent. Your task is to:
 1. Take a markdown string as input
-2. Extract all relevant invoice details as structured json from the markdown
-3. Return the json
+2. Analyze the markdown content to identify key information
+3. Extract all relevant invoice details as structured json from the markdown
+4. Return the json with the extracted information
+
+The json should include fields like:
+- invoice_number
+- date
+- total_amount
+- line_items
+- vendor_name
+- etc.
 """
 
 MANAGER_AGENT_DESCRIPTION = """
 You are a document processing manager. Your task is to:
 1. Take a document file path as input
-2. Use the markdown_agent to extract and format the text
-3. Use the structured_data_agent to extract invoice details as structured json from the markdown
-4. Return the json
+2. First, use the markdown_agent to extract text and format it as markdown
+3. Then, use the structured_data_agent to extract invoice details from the markdown
+4. Return the extracted structured data
+
+Important: You must use both agents in sequence:
+1. First call markdown_agent with the document path
+2. Then call structured_data_agent with the markdown output
 """
 
 
@@ -93,10 +111,12 @@ def main():
         manager_agent = setup_agents()
 
         # Process document
-        task = f"""Process the document at {args.file_path} and return the results as a well-formatted markdown string.
-        Use the markdown_agent to extract and format the text.
-        Use the structured_data_agent to extract invoice details as structured json from the markdown.
-        Return the json."""
+        task = f"""Process the document at {args.file_path}:
+        1. First, use the markdown_agent to extract text and format it as markdown
+        2. Then, use the structured_data_agent to extract invoice details from the markdown
+        3. Return the extracted structured data as JSON
+
+        Important: You must use both agents in sequence. Start with markdown_agent to get the markdown text, then use structured_data_agent to extract the data."""
 
         # Run the task
         result = manager_agent.run(task)
@@ -105,10 +125,10 @@ def main():
         if result:
             print(result)
             
-            # Save to file if output path specified
+            # Write as json to file if output path specified
             if args.output:
-                output_path = Path(args.output)
-                output_path.write_text(str(result))
+                output_path = Path(args.output) 
+                output_path.write_text(json.dumps(result, indent=4))
                 logger.info(f"Output saved to {output_path}")
                 
         return 0

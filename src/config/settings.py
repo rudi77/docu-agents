@@ -29,6 +29,7 @@ class Settings:
         
         # OpenAI
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        self.OTEL_SERVICE_NAME = os.getenv("OTEL_SERVICE_NAME")
 
 @lru_cache()
 def get_settings() -> Settings:

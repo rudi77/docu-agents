@@ -34,6 +34,7 @@ class AzureOCRTool(Tool):
     Performs Optical Character Recognition (OCR) on documents using Azure's Document Intelligence API.
     This tool can process PDF documents and images to extract text content.
     The tool handles retries and provides detailed error messages if something goes wrong.
+    The tool returns a text string of the extracted text from the document.
     """
     inputs = {
         "file_path": {
@@ -41,7 +42,7 @@ class AzureOCRTool(Tool):
             "description": "Path to the document file (PDF or image) to process"
         }
     }
-    output_type = "array"  # Will return a list of OCRResponse objects
+    output_type = "string"  # Will return a list of OCRResponse objects
 
     def __init__(self):
         super().__init__()
@@ -81,29 +82,23 @@ class AzureOCRTool(Tool):
                 return self._process_document(file_path, retry_count + 1)
             raise Exception(f"Failed to process document after {self.max_retries} attempts: {str(e)}")
 
-    def _extract_text_from_result(self, result: dict) -> List[OCRResponse]:
-        """Extract text and metadata from OCR result"""
-        responses = []
+    def _extract_text_from_result(self, result: dict) -> str:
+        """Extract text and metadata from OCR result and return it as a text string"""
         
+        text = ""
+        text_lines = []        
         # Process each page
         for page_idx, page in enumerate(result.pages, 1):
-            text_lines = []
-            
+            text_lines.append(f"Page {page_idx}\n")
             # Extract lines from the page
             for line in page.lines:
                 text_lines.append(line.content)
 
-            # Create response for this page
-            responses.append(OCRResponse(
-                page_number=page_idx,
-                text="\n".join(text_lines)
-            ))
+        text = "\n".join(text_lines)
 
-        logger.info(f"Extracted text:\n{responses}")
+        return text
 
-        return responses
-
-    def forward(self, file_path: str) -> List[OCRResponse]:
+    def forward(self, file_path: str) -> str:
         """
         Process a document using Azure Document Intelligence.
         
@@ -111,7 +106,7 @@ class AzureOCRTool(Tool):
             file_path: Path to the document file to process
             
         Returns:
-            List[OCRResponse]: List of OCR results per page
+            A text string of the extracted text from the document
         """
         if not self.is_initialized:
             self.setup()
